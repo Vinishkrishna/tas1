@@ -264,22 +264,38 @@ def save_material():
     materials = data.get("materials", [])
     
     rows = []
+    # Track efficiencies per work area from this save operation
+    area_efficiencies = {}
+    
     for item in materials:
+        eff_value = float(item['efficiency'].replace('%',''))
+        work_area = item['work_area']
+        
         rows.append({
             'date': date_str,
             'program': item['program'],
             'part_id': item['part_id'],
-            'work_area': item['work_area'],
+            'work_area': work_area,
             'qty': item['qty'],
             'req': item['req'],
             'actual': item['actual'],
-            'efficiency': float(item['efficiency'].replace('%',''))
+            'efficiency': eff_value
         })
+        
+        # Collect efficiencies per work area
+        if work_area not in area_efficiencies:
+            area_efficiencies[work_area] = []
+        area_efficiencies[work_area].append(eff_value)
     
     df = pd.DataFrame(rows)
     df.to_csv(FILES['material'], mode='a', header=not os.path.exists(FILES['material']), index=False)
+    
+    # Calculate average efficiency per work area for this save operation
+    work_area_avg = {}
+    for area, effs in area_efficiencies.items():
+        work_area_avg[area] = sum(effs) / len(effs) if effs else 0
             
-    return jsonify({"status": "success", "count": len(rows)})    
+    return jsonify({"status": "success", "count": len(rows), "efficiencies": work_area_avg})    
 
 # --- DASHBOARD DATA AGGREGATION ---
 @app.route("/get_dashboard_data")

@@ -862,8 +862,58 @@
       .then(res => res.json())
       .then(data => {
           document.getElementById("materialStatus").innerHTML = `<div class="alert alert-success">Saved ${data.count} entries!</div>`;
+          
+          // Immediately update the Work Cell Efficiency charts with the saved efficiencies
+          if (data.efficiencies) {
+              updateDashboardWithEfficiencies(data.efficiencies);
+          }
+          
+          // Also refresh full dashboard data from backend
+          const currentShift = getCurrentShift();
+          loadDashboardData(date, currentShift);
       });
     });
+    
+    // Function to directly update dashboard charts with efficiency values
+    function updateDashboardWithEfficiencies(efficiencies) {
+        for (const [area, eff] of Object.entries(efficiencies)) {
+            const loss = Math.max(0, 100 - eff);
+            
+            // Update donut chart if it exists
+            if (charts[area]) {
+                let color = '#00c853'; // Green
+                let badgeClass = 'status-good';
+                let badgeText = 'Optimal';
+                
+                if (eff === 0) { color = '#e0e0e0'; }
+                else if (eff < 50) { color = '#d50000'; badgeClass = 'status-alert'; badgeText = 'Critical'; }
+                else if (eff < 80) { color = '#ffab00'; badgeClass = 'status-warning'; badgeText = 'Warning'; }
+                
+                charts[area].data.datasets[0].data = [eff, loss];
+                charts[area].data.datasets[0].backgroundColor = [color, '#f5f5f5'];
+                charts[area].update();
+                
+                // Update text overlay
+                const textEl = document.getElementById(`val${area}`);
+                if (textEl) {
+                    textEl.textContent = Math.round(eff) + "%";
+                    textEl.style.color = (eff === 0) ? '#aaa' : color;
+                }
+                
+                // Update badge
+                const badgeEl = document.getElementById(`badge${area}`);
+                if (badgeEl) {
+                    if (eff > 0) {
+                        badgeEl.style.display = 'inline-block';
+                        badgeEl.className = `status-badge ${badgeClass}`;
+                        badgeEl.textContent = badgeText;
+                    } else {
+                        badgeEl.style.display = 'none';
+                    }
+                }
+            }
+        }
+    }
   </script>
 </body>
 </html>
