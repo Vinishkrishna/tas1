@@ -462,6 +462,14 @@
     let charts = {}; 
     const workAreas = ['Autoclave', 'CCA', 'PAA', 'Paint_Booth', 'Prefit'];
     
+    // Store current session attendance (to sync between Attendance tab and Work Cell Efficiency)
+    let sessionAttendance = {
+      count: 0,
+      total: 23,
+      pct: 0,
+      saved: false  // Flag to indicate if attendance was saved this session
+    };
+    
     // --- 1. INITIALIZATION ---
     document.addEventListener("DOMContentLoaded", function() {
         initCharts();
@@ -473,7 +481,8 @@
         document.getElementById('materialDate').value = today;
 
         // Load dashboard for today
-        loadDashboardData(today);
+        const initialShift = document.getElementById('attendanceShift').value;
+        loadDashboardData(today, initialShift);
     });
 
     // --- 2. CHARTING & DASHBOARD LOGIC ---
@@ -516,8 +525,17 @@
         }
     }
 
-    function loadDashboardData(date) {
-        fetch(`/get_dashboard_data?date=${date}`)
+    function getCurrentShift() {
+      const attShift = document.getElementById('attendanceShift');
+      const prodShift = document.getElementById('productionShift');
+      return (attShift && attShift.value) ? attShift.value : ((prodShift && prodShift.value) ? prodShift.value : '');
+    }
+
+    function loadDashboardData(date, shift) {
+      let url = `/get_dashboard_data?date=${encodeURIComponent(date)}`;
+      if (shift) url += `&shift=${encodeURIComponent(shift)}`;
+
+      fetch(url)
             .then(res => res.json())
             .then(data => {
                 const barEff = [];
@@ -585,15 +603,28 @@
                 document.getElementById('kpi-best').textContent = activeCount > 0 ? bestName : "-";
                 document.getElementById('kpi-worst').textContent = activeCount > 0 ? worstName : "-";
 
-                                // --- Attendance % (use data.count / 23) ---
-                const attendanceCount = parseInt(data.count);
-                const attendancePct = Math.round((attendanceCount / 23) * 100); // one decimal
+                // --- Attendance % (use session data if saved, otherwise from backend) ---
+                let attendancePct, present, total;
+                if (sessionAttendance.saved) {
+                  // Use the current session's attendance data
+                  present = sessionAttendance.count;
+                  total = sessionAttendance.total;
+                  attendancePct = sessionAttendance.pct;
+                } else {
+                  // Use backend data
+                  const attendancePctVal = (typeof data.attendance_pct === 'number') ? data.attendance_pct : 0;
+                  attendancePct = Math.round(attendancePctVal);
+                  present = (typeof data.attendance_present === 'number') ? data.attendance_present : 0;
+                  total = (typeof data.attendance_total === 'number') ? data.attendance_total : 0;
+                }
+                
                 const attEl = document.getElementById('attendancePct');
                 if(attEl) {
                   attEl.textContent = (isNaN(attendancePct) ? '0' : attendancePct) + '%';
+                  attEl.title = `${present}/${total} present`;
                   // color hint
-                  if(attendanceCount >= 20) { attEl.className = 'badge bg-success text-white'; }
-                  else if(attendanceCount >= 12) { attEl.className = 'badge bg-warning text-dark'; }
+                  if(attendancePct >= 85) { attEl.className = 'badge bg-success text-white'; }
+                  else if(attendancePct >= 50) { attEl.className = 'badge bg-warning text-dark'; }
                   else { attEl.className = 'badge bg-danger text-white'; }
                 }
                 
@@ -609,7 +640,7 @@
     // Refresh dashboard on tab switch
     document.getElementById('dashboard-tab').addEventListener('shown.bs.tab', function () {
         const date = document.getElementById('productionDate').value || new Date().toISOString().split('T')[0];
-        loadDashboardData(date);
+      loadDashboardData(date, getCurrentShift());
     });
 
     // --- 3. PRODUCTION LOGIC ---
@@ -712,12 +743,25 @@
     });
 
     // --- 4. ATTENDANCE SAVE ---
+    const MAX_EMPLOYEES = 23; // Maximum employees cap
+    
     document.getElementById("attendanceForm").addEventListener("submit", function (e) {
       e.preventDefault();
       const data = {};
+      
+      // Count currently selected checkboxes (for this session only)
+      let currentSelectedCount = 0;
       document.querySelectorAll("#attendanceForm input[type=checkbox]").forEach(cb => {
         data[cb.id] = cb.checked;
+        if (cb.checked) {
+          currentSelectedCount++;
+        }
       });
+      
+      // Cap the count at MAX_EMPLOYEES (23)
+      const displayCount = Math.min(currentSelectedCount, MAX_EMPLOYEES);
+      const displayPct = ((displayCount / MAX_EMPLOYEES) * 100).toFixed(1);
+      
       data.date = document.getElementById("attendanceDate").value;
       data.shift = document.getElementById("attendanceShift").value;
 
@@ -727,9 +771,27 @@
         body: JSON.stringify(data)
       })
         .then(res => res.json())
-        .then(data => {
+        .then(respData => {
+          // Store session attendance data globally
+          sessionAttendance.count = displayCount;
+          sessionAttendance.total = MAX_EMPLOYEES;
+          sessionAttendance.pct = parseFloat(displayPct);
+          sessionAttendance.saved = true;
+          
+          // Use current session selection count (capped at 23), not accumulated
           document.getElementById("attendanceStatus").innerHTML =
-            `<div class="alert alert-success">Attendance saved! ${data.count} records updated.</div>`;
+            `<div class="alert alert-success">Attendance saved for ${respData.date} (${respData.shift}) — ${displayCount}/${MAX_EMPLOYEES} present (${displayPct}%).</div>`;
+
+          // Update the Working Cell Efficiency attendance badge with current session data
+          const attEl = document.getElementById('attendancePct');
+          if(attEl) {
+            attEl.textContent = displayPct + '%';
+            attEl.title = `${displayCount}/${MAX_EMPLOYEES} present (this session)`;
+            // color hint
+            if(parseFloat(displayPct) >= 85) { attEl.className = 'badge bg-success text-white'; }
+            else if(parseFloat(displayPct) >= 50) { attEl.className = 'badge bg-warning text-dark'; }
+            else { attEl.className = 'badge bg-danger text-white'; }
+          }
         });
     });
 

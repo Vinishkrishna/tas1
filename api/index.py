@@ -25,8 +25,6 @@ FILES = {
     'standard_times': 'wp_data.csv'
 }
 
-attendance_count = 0
-
 # --- Helper: Init CSVs ---
 def init_csvs():
     att_path = get_file_path(FILES['attendance'])
@@ -66,22 +64,44 @@ def mark_attendance():
     data = request.get_json()
     date = data.pop('date')
     shift = data.pop('shift')
-    global attendance_count
     
     new_rows = []
+    present_count = 0
     for emp_id, present in data.items():
         if present:
-            attendance_count += 1
+            present_count += 1
         new_rows.append({'date': date, 'shift': shift, 'emp_id': emp_id, 'present': present})
     
     df = pd.DataFrame(new_rows)
     
     att_path = get_file_path(FILES['attendance'])
+    
+    # Remove existing entries for this date/shift before adding new ones
     if os.path.exists(att_path):
-        df.to_csv(att_path, mode='a', header=False, index=False)
+        existing_df = pd.read_csv(att_path)
+        existing_df = existing_df[~((existing_df['date'] == date) & (existing_df['shift'] == shift))]
+        combined_df = pd.concat([existing_df, df], ignore_index=True)
+        combined_df.to_csv(att_path, index=False)
     else:
         df.to_csv(att_path, index=False)
-    return jsonify({"status": "success", "count": attendance_count})
+
+    # Return count based on persisted data (guards against duplicates/multiple submits)
+    saved_df = pd.read_csv(att_path)
+    saved_mask = (saved_df['date'] == date) & (saved_df['shift'] == shift)
+    present_mask = saved_df['present'].astype(str).str.lower().eq('true')
+    saved_present_count = saved_df[saved_mask & present_mask]['emp_id'].nunique()
+
+    total_employees = len(employees)
+    attendance_pct = (saved_present_count / total_employees * 100) if total_employees > 0 else 0
+
+    return jsonify({
+        "status": "success",
+        "count": int(saved_present_count),
+        "total": int(total_employees),
+        "attendance_pct": round(float(attendance_pct), 1),
+        "date": date,
+        "shift": shift
+    })
 
 @app.route("/get_attendance", methods=["GET"])
 def get_attendance():
@@ -247,6 +267,7 @@ def save_material():
 @app.route("/get_dashboard_data")
 def get_dashboard_data():
     date = request.args.get('date', datetime.now().strftime('%Y-%m-%d'))
+    shift = request.args.get('shift')
     
     response_data = {}
     work_areas = ['Autoclave', 'CCA', 'PAA', 'Paint_Booth', 'Prefit']
@@ -259,6 +280,8 @@ def get_dashboard_data():
 
     if not prod_df.empty:
         prod_df = prod_df[prod_df['date'] == date]
+        if shift:
+            prod_df = prod_df[prod_df['shift'] == shift]
     if not mat_df.empty:
         mat_df = mat_df[mat_df['date'] == date]
 
@@ -281,8 +304,23 @@ def get_dashboard_data():
         
         response_data[area] = avg_eff
 
-    print(attendance_count)
-    response_data['count'] = attendance_count
+    # Attendance (for the selected date/shift)
+    att_path = get_file_path(FILES['attendance'])
+    total_employees = len(employees)
+    present_count = 0
+    if os.path.exists(att_path):
+        att_df = pd.read_csv(att_path)
+        if not att_df.empty:
+            mask = (att_df['date'] == date)
+            if shift:
+                mask = mask & (att_df['shift'] == shift)
+            present_mask = att_df['present'].astype(str).str.lower().eq('true')
+            present_count = att_df[mask & present_mask]['emp_id'].nunique()
+
+    attendance_pct = (present_count / total_employees * 100) if total_employees > 0 else 0
+    response_data['attendance_present'] = int(present_count)
+    response_data['attendance_total'] = int(total_employees)
+    response_data['attendance_pct'] = round(float(attendance_pct), 1)
 
     return jsonify(response_data)
 

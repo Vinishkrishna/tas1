@@ -13,7 +13,6 @@ FILES = {
     'material': 'material_log.csv',
     'standard_times': 'wp_data.csv'
 }
-attendance_count = 0
 # --- Helper: Init CSVs ---
 def init_csvs():
     if not os.path.exists(FILES['attendance']):
@@ -41,38 +40,61 @@ def index():
 
 # --- ATTENDANCE ---
 
+def safe_read_csv(filepath, columns):
+    """Safely read a CSV file, returning an empty DataFrame with specified columns if file is empty or missing."""
+    try:
+        if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
+            return pd.read_csv(filepath)
+    except (pd.errors.EmptyDataError, pd.errors.ParserError):
+        pass
+    return pd.DataFrame(columns=columns)
+
 @app.route("/mark_attendance", methods=["POST"])
 def mark_attendance():
+    MAX_EMPLOYEES = 23  # Maximum cap for employees
+    
     data = request.get_json()
     date = data.pop('date')
     shift = data.pop('shift')
-    global attendance_count
     
     new_rows = []
+    present_count = 0
     for emp_id, present in data.items():
         if present:
-            attendance_count += 1
+            present_count += 1
         new_rows.append({'date': date, 'shift': shift, 'emp_id': emp_id, 'present': present})
     
     df = pd.DataFrame(new_rows)
     
-    # Append to CSV (in production, you might want to overwrite existing date/shift entries)
-    # Here we simply append for log history
-    if os.path.exists(FILES['attendance']):
-        df.to_csv(FILES['attendance'], mode='a', header=False, index=False)
-    else:
-        df.to_csv(FILES['attendance'], index=False)
-    return jsonify({"status": "success", "count": attendance_count})
+    # Remove existing entries for this date/shift before adding new ones
+    existing_df = safe_read_csv(FILES['attendance'], ['date', 'shift', 'emp_id', 'present'])
+    if not existing_df.empty:
+        existing_df = existing_df[~((existing_df['date'] == date) & (existing_df['shift'] == shift))]
+    combined_df = pd.concat([existing_df, df], ignore_index=True)
+    combined_df.to_csv(FILES['attendance'], index=False)
+
+    # Cap the count at MAX_EMPLOYEES (23) - only count current session checkboxes
+    capped_count = min(present_count, MAX_EMPLOYEES)
+    attendance_pct = (capped_count / MAX_EMPLOYEES * 100) if MAX_EMPLOYEES > 0 else 0
+
+    return jsonify({
+        "status": "success",
+        "count": int(capped_count),
+        "total": int(MAX_EMPLOYEES),
+        "attendance_pct": round(float(attendance_pct), 1),
+        "date": date,
+        "shift": shift
+    })
 
 @app.route("/get_attendance", methods=["GET"])
 def get_attendance():
     date = request.args.get('date')
     shift = request.args.get('shift')
-    
-    if not os.path.exists(FILES['attendance']):
-        return jsonify({})
 
-    df = pd.read_csv(FILES['attendance'])
+    df = safe_read_csv(FILES['attendance'], ['date', 'shift', 'emp_id', 'present'])
+    if df.empty:
+        return jsonify({})
+    
     # Filter for specific date/shift
     mask = (df['date'] == date) & (df['shift'] == shift)
     filtered = df[mask]
@@ -264,17 +286,20 @@ def save_material():
 def get_dashboard_data():
     # Default to today if no date provided, or filter by specific date
     date = request.args.get('date', datetime.now().strftime('%Y-%m-%d'))
+    shift = request.args.get('shift')
     
     response_data = {}
     work_areas = ['Autoclave', 'CCA', 'PAA', 'Paint_Booth', 'Prefit']
 
-    # 1. Load Data
-    prod_df = pd.read_csv(FILES['production']) if os.path.exists(FILES['production']) else pd.DataFrame()
-    mat_df = pd.read_csv(FILES['material']) if os.path.exists(FILES['material']) else pd.DataFrame()
+    # 1. Load Data (using safe_read_csv to handle empty files)
+    prod_df = safe_read_csv(FILES['production'], ['date', 'shift', 'part_id', 'work_area', 'plan_qty', 'actual_qty', 'efficiency'])
+    mat_df = safe_read_csv(FILES['material'], ['date', 'program', 'part_id', 'work_area', 'qty', 'req', 'actual', 'efficiency'])
 
-    # 2. Filter by Date (Optional: remove this filter to show ALL TIME average)
+    # 2. Filter by Date/Shift
     if not prod_df.empty:
         prod_df = prod_df[prod_df['date'] == date]
+        if shift:
+            prod_df = prod_df[prod_df['shift'] == shift]
     if not mat_df.empty:
         mat_df = mat_df[mat_df['date'] == date]
 
@@ -304,8 +329,21 @@ def get_dashboard_data():
         response_data[area] = avg_eff
 
 
-    print(attendance_count)
-    response_data['count'] = attendance_count
+    # Attendance (for the selected date/shift)
+    MAX_EMPLOYEES = 23
+    present_count = 0
+    att_df = safe_read_csv(FILES['attendance'], ['date', 'shift', 'emp_id', 'present'])
+    if not att_df.empty:
+        mask = (att_df['date'] == date)
+        if shift:
+            mask = mask & (att_df['shift'] == shift)
+        present_mask = att_df['present'].astype(str).str.lower().eq('true')
+        present_count = min(att_df[mask & present_mask]['emp_id'].nunique(), MAX_EMPLOYEES)
+
+    attendance_pct = (present_count / MAX_EMPLOYEES * 100) if MAX_EMPLOYEES > 0 else 0
+    response_data['attendance_present'] = int(present_count)
+    response_data['attendance_total'] = int(MAX_EMPLOYEES)
+    response_data['attendance_pct'] = round(float(attendance_pct), 1)
 
     return jsonify(response_data)
 
