@@ -685,17 +685,23 @@
       })
         .then(res => res.json())
         .then(data => {
-          let html = `<h4 class="text-success mb-3">Operator Assignment</h4>
+          let html = `<h4 class="text-success mb-3">Operator Assignment (${data.present_count} operators present)</h4>
           <table class="table table-striped align-middle">
-          <thead class="table-dark"><tr><th>Part</th><th>Planned</th><th>Area</th><th>Operators</th><th style="width:150px">Actual Qty</th><th>Efficiency</th></tr></thead><tbody>`;
+          <thead class="table-dark"><tr><th>Part</th><th>Planned</th><th>Area</th><th>Best Operator</th><th>Support</th><th style="width:150px">Actual Qty</th><th>Efficiency</th></tr></thead><tbody>`;
           
           data.assignments.forEach(task => {
-            const ops = task.operators.map(op => `<span class="badge bg-info text-dark">${op.best_operator},${op.support_operator}</span>`).join(' ');
+            let bestOp = 'Not Assigned';
+            let supportOp = 'None';
+            if (task.operators && task.operators.length > 0) {
+              bestOp = task.operators[0].best_operator || 'Not Assigned';
+              supportOp = task.operators[0].support_operator || 'None';
+            }
             html += `<tr>
             <td class="fw-bold">${task.part}</td>
             <td>${task.quantity}</td>
             <td>${task.work_area}</td>
-            <td>${ops}</td>
+            <td><span class="badge bg-success">${bestOp}</span></td>
+            <td><span class="badge bg-secondary">${supportOp}</span></td>
             <td>
                 <input type="number" class="form-control actual-qty" 
                        data-date="${date}" data-shift="${shift}" 

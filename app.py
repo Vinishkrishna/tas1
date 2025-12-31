@@ -198,25 +198,25 @@ def plan_production():
         if best_operator:
             task_assignments.append({
                 "best_operator": best_operator["name"],
-                "support_operator": support_operator["name"] 
+                "support_operator": support_operator["name"] if support_operator else "None"
             })
 
         assignments.append({
             "part": task["part_name"],
+            "part_id": task["part_id"],
             "quantity": task["quantity"],
             "work_area": task["work_area"],
             "operators": task_assignments
         })
 
-
         # Prepare data to save to DB
         log_entries.append({
             'date': date,
             'shift': shift,
-            'part_id': part_id,
-            'work_area': area,
-            'plan_qty': qty,
-            'actual_qty': 0, # Starts at 0
+            'part_id': task["part_id"],
+            'work_area': task["work_area"],
+            'plan_qty': task["quantity"],
+            'actual_qty': 0,
             'efficiency': 0
         })
 

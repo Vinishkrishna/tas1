@@ -1,5 +1,6 @@
-﻿date,shift,part_id,work_area,plan_qty,actual_qty,efficiency
+date,shift,part_id,work_area,plan_qty,actual_qty,efficiency
 2025-12-31,1,352676A3L,Autoclave,1,0,0
 2025-12-31,2,352676A3R,Prefit,1,0,0
 2025-12-31,1,352676A3L,PAA,1,0,0
 2025-12-31,General,370057-1P,CCA,1,0,0
+2025-12-31,1,352676A3R,CCA,1,1,100
