@@ -1,0 +1,151 @@
+
+body {
+
+    background-color: #f8f9fa;
+
+    font-family: Arial, sans-serif;
+
+}
+
+
+
+header {
+
+    background-color: #f3e5f5; /* Very light purple */
+
+    padding: 10px;
+
+}
+
+
+
+.container {
+
+    background-color: white;
+
+    padding: 20px;
+
+    border-radius: 8px;
+
+    box-shadow: 0 0 10px rgba(0,0,0,0.1);
+
+}
+
+
+
+h1, h3 {
+
+    color: #6a1b9a; /* Medium purple for headings */
+
+}
+
+
+
+.nav-tabs .nav-link {
+
+    color: #6a1b9a;
+
+}
+
+
+
+.nav-tabs .nav-link.active {
+
+    background-color: #e1bee7; /* Light purple */
+
+    border-color: #dee2e6 #dee2e6 #fff;
+
+    color: #4a148c; /* Darker purple for active tab text */
+
+}
+
+
+
+.btn-primary {
+
+    background-color: #ab47bc; /* Purple */
+
+    border-color: #ab47bc;
+
+}
+
+
+
+.btn-primary:hover {
+
+    background-color: #8e24aa;
+
+    border-color: #8e24aa;
+
+}
+
+
+
+.btn-success {
+
+    background-color: #7b1fa2; /* Darker purple */
+
+    border-color: #7b1fa2;
+
+}
+
+
+
+.btn-success:hover {
+
+    background-color: #6a1b9a;
+
+    border-color: #6a1b9a;
+
+}
+
+
+
+.table th {
+
+    background-color: #e1bee7; /* Light purple for table headers */
+
+    color: #4a148c;
+
+}
+
+
+
+.table-striped tbody tr:nth-of-type(odd) {
+
+    background-color: #f3e5f5; /* Very light purple for striped rows */
+
+}
+
+
+
+.card-header {
+
+    background-color: #f3e5f5;
+
+    color: #6a1b9a;
+
+}
+
+
+
+.alert-success {
+
+    background-color: #d7bde2; /* Light purple success alert */
+
+    border-color: #ab47bc;
+
+    color: #4a148c;
+
+}
+
+
+
+.form-control:focus {
+
+    border-color: #ab47bc;
+
+    box-shadow: 0 0 0 0.25rem rgba(171, 71, 188, 0.25);
+
+}
+

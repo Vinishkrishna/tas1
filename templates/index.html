@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Manufacturing Planner</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  
+  <style>
+    /* --- THEME VARIABLES --- */
+    :root {
+        --primary-purple: #6a1b9a;
+        --light-purple: #f3e5f5;
+        --success-green: #00c853;
+        --danger-red: #d50000;
+        --warning-amber: #ffab00;
+        --card-bg: #ffffff;
+    }
+
+    body {
+        background-color: #f0f2f5;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    header {
+        background: linear-gradient(135deg, #f3e5f5 0%, #e1bee7 100%);
+        padding: 15px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    }
+
+    /* --- TABS --- */
+    .nav-tabs .nav-link { color: #6a1b9a; font-weight: 500; }
+    .nav-tabs .nav-link.active {
+        background-color: #fff;
+        border-color: #dee2e6 #dee2e6 #fff;
+        color: #4a148c;
+        border-top: 3px solid var(--primary-purple);
+    }
+
+    /* --- DASHBOARD STYLES --- */
+    .dashboard-container {
+        background-color: #fff;
+        padding: 25px;
+        border-radius: 12px;
+        box-shadow: 0 2px 15px rgba(0,0,0,0.03);
+    }
+
+    /* KPI Summary Cards */
+    .kpi-card {
+        background: white;
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        border-left: 5px solid var(--primary-purple);
+        transition: transform 0.2s;
+    }
+    .kpi-card:hover { transform: translateY(-3px); box-shadow: 0 6px 12px rgba(0,0,0,0.1); }
+    .kpi-title { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1px; color: #6c757d; font-weight: 600; }
+    .kpi-value { font-size: 2rem; font-weight: 700; color: #333; margin-top: 5px; }
+
+    /* Chart Cards */
+    .chart-card {
+        background: white;
+        border-radius: 15px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        padding: 15px;
+        text-align: center;
+        height: 100%;
+        border: 1px solid #f0f0f0;
+    }
+    
+    .chart-header {
+        font-weight: 600;
+        font-size: 1rem;
+        color: #444;
+        margin-bottom: 10px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid #f0f0f0;
+    }
+
+    .donut-container {
+        position: relative;
+        height: 160px; 
+        width: 100%;
+        display: flex;
+        justify-content: center;
+    }
+
+    /* Centered Text inside Donut */
+    .donut-inner-text {
+        position: absolute;
+        top: 55%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        font-size: 1.2rem;
+        font-weight: bold;
+        color: #333;
+    }
+    .donut-label {
+        position: absolute;
+        top: 38%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        font-size: 0.7rem;
+        color: #888;
+        text-transform: uppercase;
+    }
+
+    /* Status Badges */
+    .status-badge {
+        font-size: 0.7rem;
+        padding: 4px 10px;
+        border-radius: 20px;
+        display: inline-block;
+        margin-top: 5px;
+        font-weight: 600;
+    }
+    .status-good { background-color: #e8f5e9; color: #2e7d32; }
+    .status-warning { background-color: #fff8e1; color: #f57f17; }
+    .status-alert { background-color: #ffebee; color: #c62828; }
+
+    /* --- TABLES --- */
+    .table th { background-color: #e1bee7; color: #4a148c; }
+    .btn-primary { background-color: #ab47bc; border-color: #ab47bc; }
+    .btn-primary:hover { background-color: #8e24aa; }
+    .btn-success { background-color: #7b1fa2; border-color: #7b1fa2; }
+  </style>
+</head>
+
+<body>
+  <header class="text-center mb-4">
+    <img src="https://www.tataadvancedsystems.com/website/images/logo.png" alt="Logo" class="img-fluid rounded">
+  </header>
+  
+  <div class="container mt-4 mb-5">
+    <h1 class="text-center mb-4 text-primary" style="color: #6a1b9a !important;">Bay 4 M2M Daily Planner</h1>
+
+    <ul class="nav nav-tabs mb-4" id="myTab" role="tablist">
+      <li class="nav-item">
+        <a class="nav-link active" id="attendance-tab" data-bs-toggle="tab" href="#attendance" role="tab">Attendance</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" id="production-tab" data-bs-toggle="tab" href="#production" role="tab">Production Plan</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" id="efficiency-tab" data-bs-toggle="tab" href="#efficiency" role="tab">Efficiency Calculator</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" id="material-tab" data-bs-toggle="tab" href="#material" role="tab">Material Consumption</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" id="dashboard-tab" data-bs-toggle="tab" href="#dashboard" role="tab">Work Cell Efficiency</a>
+      </li>
+    </ul>
+
+    <div class="tab-content">
+      
+      <div class="tab-pane fade show active" id="attendance">
+        <div class="card shadow-sm p-4">
+            <h3 class="mb-3 text-secondary">Mark Today's Attendance</h3>
+            <form id="attendanceForm">
+              <div class="row mb-3">
+                <div class="col-md-6">
+                  <label for="attendanceDate" class="form-label">Date</label>
+                  <input type="date" class="form-control" id="attendanceDate" required>
+                </div>
+                <div class="col-md-6">
+                  <label for="attendanceShift" class="form-label">Shift</label>
+                  <select class="form-select" id="attendanceShift" required>
+                    <option value="">-- Select Shift --</option>
+                    <option value="General">General</option>
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                  </select>
+                </div>
+              </div>
+              <div class="row g-2">
+                  {% for emp_id, info in employees.items() %}
+                  <div class="col-md-6">
+                      <div class="form-check p-2 border rounded bg-light">
+                        <input class="form-check-input ms-1" type="checkbox" id="{{ emp_id }}" checked>
+                        <label class="form-check-label ms-2" for="{{ emp_id }}">
+                          <strong>{{ info.name }}</strong> <span class="text-muted small">({{ info.trained_skills }})</span>
+                        </label>
+                      </div>
+                  </div>
+                  {% endfor %}
+              </div>
+              <button type="submit" class="btn btn-success mt-4">Save Attendance</button>
+            </form>
+            <div id="attendanceStatus" class="mt-3"></div>
+        </div>
+      </div>
+
+      <div class="tab-pane fade" id="production">
+        <div class="card shadow-sm p-4">
+            <h3 class="mb-3 text-secondary">Plan Production</h3>
+            <div class="row mb-3">
+              <div class="col-md-6">
+                <label for="productionDate" class="form-label">Date</label>
+                <input type="date" class="form-control" id="productionDate" required>
+              </div>
+              <div class="col-md-6">
+                <label for="productionShift" class="form-label">Shift</label>
+                <select class="form-select" id="productionShift" required>
+                  <option value="">-- Select Shift --</option>
+                  <option value="General">General</option>
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                </select>
+              </div>
+            </div>
+            
+            <div id="partsList">
+              <div class="part-row mb-3 p-3 border rounded bg-light">
+                <div class="row g-3 align-items-end">
+                  <div class="col-md-4">
+                    <label class="form-label small">Part Name</label>
+                    <select class="form-select part-select">
+                      <option value="">-- Select Part --</option>
+                      {% for part_id, info in parts.items() %}
+                      <option value="{{ part_id }}">{{ info.name }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label small">Quantity</label>
+                    <input type="number" class="form-control quantity" placeholder="Qty" min="1" value="1">
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label small">Work Area</label>
+                    <select class="form-select workarea">
+                      <option value="">-- Select Area --</option>
+                      {% for info in header %}
+                      <option value="{{ info }}">{{ info }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                  <div class="col-md-2">
+                    <button type="button" class="btn btn-outline-danger w-100 remove-part">Remove</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+    
+            <button id="addPart" class="btn btn-primary mb-3">+ Add Another Part</button>
+            <hr>
+            <button id="generatePlan" class="btn btn-lg btn-success w-100">Generate Operator Assignment</button>
+        </div>
+      </div>
+
+      <div class="tab-pane fade" id="efficiency">
+        <div class="card shadow-sm p-4">
+            <h3 class="text-secondary">Efficiency Calculator</h3>
+            <p class="text-muted small">Enter actual quantities produced. Efficiency updates automatically.</p>
+            <div id="efficiencyResult"></div>
+        </div>
+      </div>
+
+      <div class="tab-pane fade" id="material">
+        <div class="card shadow-sm p-3">
+            <h3 class="mb-3 text-secondary">Material Consumption Log</h3>
+            <form id="materialForm">
+              <div class="row mb-3">
+                <div class="col-md-4">
+                  <label for="materialDate" class="form-label">Date</label>
+                  <input type="date" class="form-control" id="materialDate" required>
+                </div>
+              </div>
+              <div class="table-responsive">
+                <table class="table table-bordered align-middle text-center table-hover">
+                  <thead class="table-light">
+                    <tr>
+                      <th style="width: 10%">PROGRAM</th>
+                      <th style="width: 15%">PART NO</th>
+                      <th style="width: 15%">WORK AREA</th>
+                      <th style="width: 8%">QTY</th>
+                      <th style="width: 5%">UNIT</th>
+                      <th style="width: 8%">REQ</th>
+                      <th style="width: 10%">ACTUAL</th>
+                      <th style="width: 15%">SUPERVISOR</th>
+                      <th style="width: 10%">EFF %</th>
+                    </tr>
+                  </thead>
+                  <tbody id="materialTableBody">
+                    {# Format: (Program Name, Unit, Base Requirement Per Item) #}
+                    {% set programs = [
+                    ('C130J', 'NO', 30),
+                    ('AA64', 'SQ.FT', 40),
+                    ('C295 (MLG)', 'NO', 25),
+                    ('C295 (RAMP)', 'NO', 50),
+                    ('C295 (DOOR)', 'NO', 20)
+                    ] %}
+    
+                    {% for prog, unit, base_req in programs %}
+                    <tr class="material-row" data-program="{{ prog }}" data-base-req="{{ base_req }}">
+                      <td class="fw-bold text-primary">{{ prog }}</td>
+                      <td>
+                        <select class="form-select form-select-sm material-part">
+                          <option value="">Select</option>
+                          {% for part_id, info in parts.items() %}
+                          <option value="{{ part_id }}">{{ info.name }}</option>
+                          {% endfor %}
+                        </select>
+                      </td>
+                      <td>
+                        <select class="form-select form-select-sm material-area">
+                            <option value="">Select</option>
+                            {% for info in header %}
+                            <option value="{{ info }}">{{ info }}</option>
+                            {% endfor %}
+                        </select>
+                      </td>
+                      <td>
+                        <input type="number" class="form-control form-control-sm material-qty calc-input" placeholder="0" min="0">
+                      </td>
+                      <td class="small text-muted">{{ unit }}</td>
+                      <td class="bg-light fw-bold">
+                        <span class="req-display">0</span>
+                      </td>
+                      <td>
+                        <input type="number" class="form-control form-control-sm material-actual calc-input" placeholder="0" min="0">
+                      </td>
+                      <td>
+                        <input type="text" class="form-control form-control-sm material-sup" placeholder="Name">
+                      </td>
+                      <td class="fw-bold">
+                        <span class="eff-display">0%</span>
+                      </td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+              <button type="submit" class="btn btn-primary mt-3 w-100">Save Material Data</button>
+            </form>
+            <div id="materialStatus" class="mt-3"></div>
+        </div>
+      </div>
+
+      <div class="tab-pane fade" id="dashboard">
+        <div class="dashboard-container">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h3 class="fw-bold" style="color: var(--primary-purple);">Manufacturing Intelligence</h3>
+                    <p class="text-muted mb-0">Real-time combined efficiency (Production + Material) for Bay 4</p>
+                    <div class="mt-2">
+                          <span class="text-muted small me-2">Attendance</span>
+                          <span id="attendancePct" class="badge bg-light text-dark">0%</span>
+                    </div>
+                  </div>
+                <div>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="location.reload()">
+                         Refresh Data
+                    </button>
+                </div>
+            </div>
+    
+            <div class="row mb-4">
+                <div class="col-md-4">
+                    <div class="kpi-card" style="border-left-color: #6a1b9a;">
+                        <div class="kpi-title">Plant Average</div>
+                        <div class="kpi-value" id="kpi-avg">0%</div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="kpi-card" style="border-left-color: #00c853;">
+                        <div class="kpi-title">Best Performer</div>
+                        <div class="kpi-value text-success" id="kpi-best">-</div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="kpi-card" style="border-left-color: #d50000;">
+                        <div class="kpi-title">Needs Attention</div>
+                        <div class="kpi-value text-danger" id="kpi-worst">-</div>
+                    </div>
+                </div>
+            </div>
+    
+            <h5 class="text-muted mb-3 ms-1 border-bottom pb-2">Work Cell Performance</h5>
+            <div class="row row-cols-1 row-cols-md-5 g-3 mb-4">
+                <div class="col">
+                    <div class="chart-card">
+                        <div class="chart-header">Autoclave</div>
+                        <div class="donut-container">
+                            <canvas id="chartAutoclave"></canvas>
+                            <div class="donut-label">EFF</div>
+                            <div class="donut-inner-text" id="valAutoclave">0%</div>
+                        </div>
+                        <span class="status-badge" id="badgeAutoclave" style="display:none">Stable</span>
+                    </div>
+                </div>
+                <div class="col">
+                    <div class="chart-card">
+                        <div class="chart-header">CCA</div>
+                        <div class="donut-container">
+                            <canvas id="chartCCA"></canvas>
+                            <div class="donut-label">EFF</div>
+                            <div class="donut-inner-text" id="valCCA">0%</div>
+                        </div>
+                        <span class="status-badge" id="badgeCCA" style="display:none">Stable</span>
+                    </div>
+                </div>
+                <div class="col">
+                    <div class="chart-card">
+                        <div class="chart-header">PAA</div>
+                        <div class="donut-container">
+                            <canvas id="chartPAA"></canvas>
+                            <div class="donut-label">EFF</div>
+                            <div class="donut-inner-text" id="valPAA">0%</div>
+                        </div>
+                        <span class="status-badge" id="badgePAA" style="display:none">Stable</span>
+                    </div>
+                </div>
+                <div class="col">
+                    <div class="chart-card">
+                        <div class="chart-header">Paint Booth</div>
+                        <div class="donut-container">
+                            <canvas id="chartPaint_Booth"></canvas>
+                            <div class="donut-label">EFF</div>
+                            <div class="donut-inner-text" id="valPaint_Booth">0%</div>
+                        </div>
+                        <span class="status-badge" id="badgePaint_Booth" style="display:none">Stable</span>
+                    </div>
+                </div>
+                <div class="col">
+                    <div class="chart-card">
+                        <div class="chart-header">Prefit</div>
+                        <div class="donut-container">
+                            <canvas id="chartPrefit"></canvas>
+                            <div class="donut-label">EFF</div>
+                            <div class="donut-inner-text" id="valPrefit">0%</div>
+                        </div>
+                        <span class="status-badge" id="badgePrefit" style="display:none">Stable</span>
+                    </div>
+                </div>
+            </div>
+    
+            <div class="row">
+                <div class="col-12">
+                    <div class="card shadow-sm border-0">
+                        <div class="card-body">
+                            <h5 class="card-title text-secondary mb-4">Comparative Efficiency Analysis</h5>
+                            <div style="height: 350px;">
+                                <canvas id="mainBarChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    // --- GLOBALS ---
+    let charts = {}; 
+    const workAreas = ['Autoclave', 'CCA', 'PAA', 'Paint_Booth', 'Prefit'];
+    
+    // --- 1. INITIALIZATION ---
+    document.addEventListener("DOMContentLoaded", function() {
+        initCharts();
+        
+        // Init Date Pickers to Today
+        const today = new Date().toISOString().split('T')[0];
+        document.getElementById('attendanceDate').value = today;
+        document.getElementById('productionDate').value = today;
+        document.getElementById('materialDate').value = today;
+
+        // Load dashboard for today
+        loadDashboardData(today);
+    });
+
+    // --- 2. CHARTING & DASHBOARD LOGIC ---
+    function initCharts() {
+        workAreas.forEach(area => {
+            const ctx = document.getElementById(`chart${area}`);
+            if(ctx) {
+                charts[area] = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Efficiency', 'Loss'],
+                        datasets: [{ data: [0, 100], backgroundColor: ['#e0e0e0', '#f5f5f5'], borderWidth: 0 }]
+                    },
+                    options: { 
+                        responsive: true, 
+                        cutout: '75%', 
+                        plugins: { legend: { display: false }, tooltip: { enabled: false } } 
+                    }
+                });
+            }
+        });
+
+        const barCtx = document.getElementById('mainBarChart');
+        if(barCtx) {
+            charts['main'] = new Chart(barCtx, {
+                type: 'bar',
+                data: {
+                    labels: workAreas.map(w => w.replace('_', ' ')),
+                    datasets: [
+                        { label: 'Efficiency', data: [0,0,0,0,0], backgroundColor: '#6a1b9a', borderRadius: 4 },
+                        { label: 'Loss', data: [0,0,0,0,0], backgroundColor: '#e1bee7', borderRadius: 4 }
+                    ]
+                },
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false,
+                    scales: { y: { beginAtZero: true, max: 100 } } 
+                }
+            });
+        }
+    }
+
+    function loadDashboardData(date) {
+        fetch(`/get_dashboard_data?date=${date}`)
+            .then(res => res.json())
+            .then(data => {
+                const barEff = [];
+                const barLoss = [];
+                let totalEff = 0;
+                let activeCount = 0;
+                let bestVal = -1; 
+                let worstVal = 101;
+                let bestName = "-"; 
+                let worstName = "-";
+
+                workAreas.forEach(area => {
+                    const eff = data[area] || 0;
+                    const loss = Math.max(0, 100 - eff);
+
+                    // 1. Update Donut Chart
+                    if(charts[area]) {
+                        charts[area].data.datasets[0].data = [eff, loss];
+                        
+                        // Dynamic Colors & Badges
+                        let color = '#00c853'; // Green
+                        let badgeClass = 'status-good';
+                        let badgeText = 'Optimal';
+                        
+                        if(eff === 0) { color = '#e0e0e0'; } // Grey if empty
+                        else if(eff < 50) { color = '#d50000'; badgeClass = 'status-alert'; badgeText = 'Critical'; }
+                        else if(eff < 80) { color = '#ffab00'; badgeClass = 'status-warning'; badgeText = 'Warning'; }
+
+                        charts[area].data.datasets[0].backgroundColor = [color, '#f5f5f5'];
+                        charts[area].update();
+
+                        // 2. Update Text Overlay & Badge
+                        const textEl = document.getElementById(`val${area}`);
+                        if(textEl) {
+                            textEl.textContent = Math.round(eff) + "%";
+                            textEl.style.color = (eff === 0) ? '#aaa' : color;
+                        }
+                        const badgeEl = document.getElementById(`badge${area}`);
+                        if(badgeEl) {
+                            if(eff > 0) {
+                                badgeEl.style.display = 'inline-block';
+                                badgeEl.className = `status-badge ${badgeClass}`;
+                                badgeEl.textContent = badgeText;
+                            } else {
+                                badgeEl.style.display = 'none';
+                            }
+                        }
+                    }
+                    
+                    // 3. KPI Logic
+                    if(eff > 0) {
+                        totalEff += eff;
+                        activeCount++;
+                        if(eff > bestVal) { bestVal = eff; bestName = area.replace('_',' '); }
+                        if(eff < worstVal) { worstVal = eff; worstName = area.replace('_',' '); }
+                    }
+
+                    barEff.push(eff);
+                    barLoss.push(loss);
+                });
+
+                // 4. Update KPI Cards
+                const avg = activeCount > 0 ? (totalEff / activeCount).toFixed(1) : 0;
+                document.getElementById('kpi-avg').textContent = avg + "%";
+                document.getElementById('kpi-best').textContent = activeCount > 0 ? bestName : "-";
+                document.getElementById('kpi-worst').textContent = activeCount > 0 ? worstName : "-";
+
+                                // --- Attendance % (use data.count / 23) ---
+                const attendanceCount = parseInt(data.count);
+                const attendancePct = Math.round((attendanceCount / 23) * 100); // one decimal
+                const attEl = document.getElementById('attendancePct');
+                if(attEl) {
+                  attEl.textContent = (isNaN(attendancePct) ? '0' : attendancePct) + '%';
+                  // color hint
+                  if(attendanceCount >= 20) { attEl.className = 'badge bg-success text-white'; }
+                  else if(attendanceCount >= 12) { attEl.className = 'badge bg-warning text-dark'; }
+                  else { attEl.className = 'badge bg-danger text-white'; }
+                }
+                
+                // 5. Update Main Bar Chart
+                if(charts['main']) {
+                    charts['main'].data.datasets[0].data = barEff;
+                    charts['main'].data.datasets[1].data = barLoss;
+                    charts['main'].update();
+                }
+            });
+    }
+
+    // Refresh dashboard on tab switch
+    document.getElementById('dashboard-tab').addEventListener('shown.bs.tab', function () {
+        const date = document.getElementById('productionDate').value || new Date().toISOString().split('T')[0];
+        loadDashboardData(date);
+    });
+
+    // --- 3. PRODUCTION LOGIC ---
+    // Add Row
+    document.getElementById("addPart").addEventListener("click", function () {
+      const template = document.querySelector(".part-row").cloneNode(true);
+      template.querySelectorAll("input, select").forEach(el => {
+        el.value = el.classList.contains("quantity") ? "10" : el.classList.contains("workarea") ? "" : "";
+      });
+      document.getElementById("partsList").appendChild(template);
+    });
+    // Remove Row
+    document.addEventListener("click", function (e) {
+      if (e.target.classList.contains("remove-part")) {
+        if (document.querySelectorAll(".part-row").length > 1) {
+          e.target.closest(".part-row").remove();
+        }
+      }
+    });
+
+    // Generate Plan
+    document.getElementById("generatePlan").addEventListener("click", function () {
+      const parts = [];
+      document.querySelectorAll(".part-row").forEach(row => {
+        const select = row.querySelector(".part-select");
+        const qty = row.querySelector(".quantity").value;
+        const area = row.querySelector(".workarea").value;
+        if (select.value && qty > 0) {
+          parts.push({ part_id: select.value, quantity: qty, work_area: area });
+        }
+      });
+
+      if (parts.length === 0) { alert("Please select at least one part."); return; }
+
+      const date = document.getElementById('productionDate').value;
+      const shift = document.getElementById('productionShift').value;
+
+      fetch("/plan_production", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ parts, date, shift })
+      })
+        .then(res => res.json())
+        .then(data => {
+          let html = `<h4 class="text-success mb-3">Operator Assignment</h4>
+          <table class="table table-striped align-middle">
+          <thead class="table-dark"><tr><th>Part</th><th>Planned</th><th>Area</th><th>Operators</th><th style="width:150px">Actual Qty</th><th>Efficiency</th></tr></thead><tbody>`;
+          
+          data.assignments.forEach(task => {
+            const ops = task.operators.map(op => `<span class="badge bg-info text-dark">${op.best_operator},${op.support_operator}</span>`).join(' ');
+            html += `<tr>
+            <td class="fw-bold">${task.part}</td>
+            <td>${task.quantity}</td>
+            <td>${task.work_area}</td>
+            <td>${ops}</td>
+            <td>
+                <input type="number" class="form-control actual-qty" 
+                       data-date="${date}" data-shift="${shift}" 
+                       data-part="${task.part_id}" data-area="${task.work_area}" 
+                       data-plan="${task.quantity}" 
+                       value="0" min="0">
+            </td>
+            <td class="efficiency fw-bold text-muted">0%</td>
+            </tr>`;
+          });
+          html += `</tbody></table>`;
+          document.getElementById("efficiencyResult").innerHTML = html;
+
+          // Wire up Auto-Save on Change
+          document.querySelectorAll('.actual-qty').forEach(input => {
+            input.addEventListener('change', function () { 
+                const payload = {
+                    date: this.dataset.date,
+                    shift: this.dataset.shift,
+                    part_id: this.dataset.part,
+                    work_area: this.dataset.area,
+                    plan: this.dataset.plan,
+                    actual: this.value
+                };
+
+                fetch('/update_production_actual', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                })
+                .then(res => res.json())
+                .then(resp => {
+                    if(resp.status === 'updated') {
+                        const effCell = this.closest('tr').querySelector('.efficiency');
+                        effCell.textContent = resp.efficiency.toFixed(1) + '%';
+                        effCell.className = resp.efficiency >= 80 ? 'efficiency fw-bold text-success' : 'efficiency fw-bold text-danger';
+                        this.classList.add('is-valid');
+                    }
+                });
+            });
+          });
+
+          new bootstrap.Tab(document.querySelector('#efficiency-tab')).show();
+        });
+    });
+
+    // --- 4. ATTENDANCE SAVE ---
+    document.getElementById("attendanceForm").addEventListener("submit", function (e) {
+      e.preventDefault();
+      const data = {};
+      document.querySelectorAll("#attendanceForm input[type=checkbox]").forEach(cb => {
+        data[cb.id] = cb.checked;
+      });
+      data.date = document.getElementById("attendanceDate").value;
+      data.shift = document.getElementById("attendanceShift").value;
+
+      fetch("/mark_attendance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data)
+      })
+        .then(res => res.json())
+        .then(data => {
+          document.getElementById("attendanceStatus").innerHTML =
+            `<div class="alert alert-success">Attendance saved! ${data.count} records updated.</div>`;
+        });
+    });
+
+    // --- 5. MATERIAL LOGIC ---
+    // Calculation (Frontend Visuals)
+    document.getElementById("materialTableBody").addEventListener("input", function (e) {
+      if (e.target.classList.contains("calc-input")) {
+        const row = e.target.closest("tr");
+        const baseReq = parseFloat(row.getAttribute("data-base-req")) || 0;
+        const qty = parseFloat(row.querySelector(".material-qty").value) || 0;
+        const actual = parseFloat(row.querySelector(".material-actual").value) || 0;
+
+        const totalReq = baseReq * qty;
+        row.querySelector(".req-display").textContent = totalReq;
+
+        let efficiency = 0;
+        if (totalReq > 0 && actual > 0) efficiency = (actual / totalReq) * 100;
+        else if (actual > 0 && totalReq === 0) efficiency = 100;
+
+        const effSpan = row.querySelector(".eff-display");
+        effSpan.textContent = efficiency.toFixed(1) + "%";
+        
+        if (efficiency > 105) effSpan.className = "eff-display text-danger";
+        else if (efficiency > 0) effSpan.className = "eff-display text-success";
+        else effSpan.className = "eff-display";
+      }
+    });
+
+    // Material Save (Backend)
+    document.getElementById("materialForm").addEventListener("submit", function (e) {
+      e.preventDefault();
+      const date = document.getElementById("materialDate").value;
+      const materialData = [];
+
+      document.querySelectorAll(".material-row").forEach(row => {
+        const partSelect = row.querySelector(".material-part");
+        const areaSelect = row.querySelector(".material-area");
+        const qty = row.querySelector(".material-qty").value;
+        const sup = row.querySelector(".material-sup").value;
+
+        if (partSelect.value && qty > 0) {
+          materialData.push({
+            program: row.getAttribute("data-program"),
+            part_id: partSelect.value,
+            work_area: areaSelect.value || "General",
+            qty: qty,
+            req: row.querySelector(".req-display").textContent,
+            actual: row.querySelector(".material-actual").value,
+            supervisor: sup,
+            efficiency: row.querySelector(".eff-display").textContent
+          });
+        }
+      });
+
+      if (materialData.length === 0) { alert("Please fill at least one row."); return; }
+
+      fetch("/save_material", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date: date, materials: materialData })
+      })
+      .then(res => res.json())
+      .then(data => {
+          document.getElementById("materialStatus").innerHTML = `<div class="alert alert-success">Saved ${data.count} entries!</div>`;
+      });
+    });
+  </script>
+</body>
+</html>
