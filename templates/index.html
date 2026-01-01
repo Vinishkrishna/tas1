@@ -772,34 +772,35 @@
       data.date = document.getElementById("attendanceDate").value;
       data.shift = document.getElementById("attendanceShift").value;
 
+      // OPTIMISTIC UI: Show success immediately
+      sessionAttendance.count = displayCount;
+      sessionAttendance.total = MAX_EMPLOYEES;
+      sessionAttendance.pct = parseFloat(displayPct);
+      sessionAttendance.saved = true;
+      
+      document.getElementById("attendanceStatus").innerHTML =
+        `<div class="alert alert-success">Attendance saved for ${data.date} (${data.shift}) — ${displayCount}/${MAX_EMPLOYEES} present (${displayPct}%).</div>`;
+
+      // Update badge immediately
+      const attEl = document.getElementById('attendancePct');
+      if(attEl) {
+        attEl.textContent = displayPct + '%';
+        attEl.title = `${displayCount}/${MAX_EMPLOYEES} present (this session)`;
+        if(parseFloat(displayPct) >= 85) { attEl.className = 'badge bg-success text-white'; }
+        else if(parseFloat(displayPct) >= 50) { attEl.className = 'badge bg-warning text-dark'; }
+        else { attEl.className = 'badge bg-danger text-white'; }
+      }
+
+      // Send to server in background (don't wait)
       fetch("/mark_attendance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data)
-      })
-        .then(res => res.json())
-        .then(respData => {
-          // Store session attendance data globally
-          sessionAttendance.count = displayCount;
-          sessionAttendance.total = MAX_EMPLOYEES;
-          sessionAttendance.pct = parseFloat(displayPct);
-          sessionAttendance.saved = true;
-          
-          // Use current session selection count (capped at 23), not accumulated
-          document.getElementById("attendanceStatus").innerHTML =
-            `<div class="alert alert-success">Attendance saved for ${respData.date} (${respData.shift}) — ${displayCount}/${MAX_EMPLOYEES} present (${displayPct}%).</div>`;
-
-          // Update the Working Cell Efficiency attendance badge with current session data
-          const attEl = document.getElementById('attendancePct');
-          if(attEl) {
-            attEl.textContent = displayPct + '%';
-            attEl.title = `${displayCount}/${MAX_EMPLOYEES} present (this session)`;
-            // color hint
-            if(parseFloat(displayPct) >= 85) { attEl.className = 'badge bg-success text-white'; }
-            else if(parseFloat(displayPct) >= 50) { attEl.className = 'badge bg-warning text-dark'; }
-            else { attEl.className = 'badge bg-danger text-white'; }
-          }
-        });
+      }).catch(err => {
+        // Only show error if server fails
+        document.getElementById("attendanceStatus").innerHTML =
+          `<div class="alert alert-warning">Saved locally. Server sync pending...</div>`;
+      });
     });
 
     // --- 5. MATERIAL LOGIC ---

@@ -167,8 +167,6 @@ def plan_production():
         })
 
         log_entries.append({
-            'date': date,
-            'shift': shift,
             'part_id': task["part_id"],
             'work_area': task["work_area"],
             'plan_qty': task["quantity"],
@@ -176,8 +174,8 @@ def plan_production():
             'efficiency': 0
         })
 
-    # Save using storage module
-    storage.save_production_plan(log_entries)
+    # Save using storage module (with date and shift)
+    storage.save_production_plan(date, shift, log_entries)
 
     return jsonify({"assignments": assignments, "present_count": len(present_employees)})
 
@@ -216,7 +214,6 @@ def save_material():
         work_area = item['work_area']
         
         rows.append({
-            'date': date_str,
             'program': item['program'],
             'part_id': item['part_id'],
             'work_area': work_area,
@@ -230,8 +227,8 @@ def save_material():
             area_efficiencies[work_area] = []
         area_efficiencies[work_area].append(eff_value)
     
-    # Save using storage module
-    storage.save_materials(rows)
+    # Save using storage module (with date)
+    storage.save_materials(date_str, rows)
     
     work_area_avg = {}
     for area, effs in area_efficiencies.items():
