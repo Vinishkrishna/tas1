@@ -662,7 +662,113 @@
       }
     });
 
-    // Generate Plan
+    // Employee data for client-side assignment
+    const employeesData = {
+      {% for eid, emp in employees.items() %}
+      "{{ eid }}": { name: "{{ emp.name }}", efficiency: {{ emp.efficiency }}, skills: "{{ emp.trained_skills }}" },
+      {% endfor %}
+    };
+
+    // Parts data
+    const partsData = {
+      {% for pid, part in parts.items() %}
+      "{{ pid }}": { name: "{{ part.name }}" },
+      {% endfor %}
+    };
+
+    // Client-side operator assignment (instant)
+    function assignOperatorsLocally(parts, presentEmployeeIds) {
+      // Get present employees with their data
+      let availableEmployees = [];
+      
+      if (presentEmployeeIds && presentEmployeeIds.length > 0) {
+        availableEmployees = presentEmployeeIds
+          .filter(id => employeesData[id])
+          .map(id => ({ id, ...employeesData[id] }));
+      } else {
+        // Fallback: use all employees
+        availableEmployees = Object.entries(employeesData)
+          .map(([id, emp]) => ({ id, ...emp }));
+      }
+
+      const assignments = [];
+      const usedEmployees = new Set();
+
+      // Helper to normalize skill names
+      const normalize = (s) => s.trim().toLowerCase().replace(/_/g, ' ');
+      
+      const hasSkill = (emp, area) => {
+        const skills = emp.skills.split(',').map(normalize);
+        return skills.includes(normalize(area));
+      };
+
+      // Sort tasks (we don't have time data client-side, so just process in order)
+      for (const task of parts) {
+        const partName = partsData[task.part_id]?.name || task.part_id;
+        
+        // Get available employees (not yet assigned)
+        const available = availableEmployees.filter(e => !usedEmployees.has(e.id));
+        
+        // Sort by efficiency (highest first)
+        const sorted = [...available].sort((a, b) => b.efficiency - a.efficiency);
+        
+        // Find skilled employees for this work area
+        const skilled = sorted.filter(e => hasSkill(e, task.work_area));
+        
+        let bestOperator = null;
+        let supportOperator = null;
+
+        // Best operator: highest efficiency skilled, or highest overall
+        if (skilled.length > 0) {
+          bestOperator = skilled[0];
+        } else if (sorted.length > 0) {
+          bestOperator = sorted[0];
+        }
+
+        if (bestOperator) {
+          usedEmployees.add(bestOperator.id);
+          
+          // Get remaining for support
+          const remaining = sorted.filter(e => e.id !== bestOperator.id && !usedEmployees.has(e.id));
+          const skilledRemaining = remaining.filter(e => hasSkill(e, task.work_area));
+          
+          // Support operator: lowest efficiency skilled, or lowest overall
+          if (skilledRemaining.length > 0) {
+            supportOperator = skilledRemaining[skilledRemaining.length - 1];
+          } else if (remaining.length > 0) {
+            supportOperator = remaining[remaining.length - 1];
+          }
+          
+          if (supportOperator) {
+            usedEmployees.add(supportOperator.id);
+          }
+        }
+
+        assignments.push({
+          part: partName,
+          part_id: task.part_id,
+          quantity: task.quantity,
+          work_area: task.work_area,
+          operators: [{
+            best_operator: bestOperator ? bestOperator.name : 'Unassigned',
+            support_operator: supportOperator ? supportOperator.name : 'Unassigned'
+          }]
+        });
+      }
+
+      return { assignments, present_count: availableEmployees.length };
+    }
+
+    // Get currently checked attendance
+    function getCheckedEmployeeIds() {
+      const ids = [];
+      document.querySelectorAll("#attendanceForm input[type=checkbox]:checked").forEach(cb => {
+        ids.push(cb.id);
+      });
+      return ids;
+    }
+
+    // Generate Plan - INSTANT with client-side assignment
     document.getElementById("generatePlan").addEventListener("click", function () {
       const parts = [];
       document.querySelectorAll(".part-row").forEach(row => {
@@ -679,74 +785,77 @@
       const date = document.getElementById('productionDate').value;
       const shift = document.getElementById('productionShift').value;
 
+      // Get present employees from attendance checkboxes
+      const presentIds = getCheckedEmployeeIds();
+      
+      // INSTANT: Do assignment client-side
+      const data = assignOperatorsLocally(parts, presentIds);
+
+      // Render results immediately
+      let html = `<h4 class="text-success mb-3">Operator Assignment (${data.present_count} operators available)</h4>
+      <table class="table table-striped align-middle">
+      <thead class="table-dark"><tr><th>Part</th><th>Planned</th><th>Area</th><th>Best Operator</th><th>Support</th><th style="width:150px">Actual Qty</th><th>Efficiency</th></tr></thead><tbody>`;
+      
+      data.assignments.forEach(task => {
+        let bestOp = task.operators[0]?.best_operator || 'Not Assigned';
+        let supportOp = task.operators[0]?.support_operator || 'None';
+        html += `<tr>
+        <td class="fw-bold">${task.part}</td>
+        <td>${task.quantity}</td>
+        <td>${task.work_area}</td>
+        <td><span class="badge bg-success">${bestOp}</span></td>
+        <td><span class="badge bg-secondary">${supportOp}</span></td>
+        <td>
+            <input type="number" class="form-control actual-qty" 
+                   data-date="${date}" data-shift="${shift}" 
+                   data-part="${task.part_id}" data-area="${task.work_area}" 
+                   data-plan="${task.quantity}" 
+                   value="0" min="0">
+        </td>
+        <td class="efficiency fw-bold text-muted">0%</td>
+        </tr>`;
+      });
+      html += `</tbody></table>`;
+      document.getElementById("efficiencyResult").innerHTML = html;
+
+      // Wire up Auto-Save on Change
+      document.querySelectorAll('.actual-qty').forEach(input => {
+        input.addEventListener('change', function () { 
+            const payload = {
+                date: this.dataset.date,
+                shift: this.dataset.shift,
+                part_id: this.dataset.part,
+                work_area: this.dataset.area,
+                plan: this.dataset.plan,
+                actual: this.value
+            };
+
+            // Calculate efficiency locally for instant display
+            const plan = parseFloat(this.dataset.plan);
+            const actual = parseFloat(this.value);
+            const efficiency = plan > 0 ? (actual / plan * 100) : 0;
+            const effCell = this.closest('tr').querySelector('.efficiency');
+            effCell.textContent = (efficiency % 1 === 0 ? efficiency : efficiency.toFixed(2)) + '%';
+            effCell.className = efficiency >= 80 ? 'efficiency fw-bold text-success' : 'efficiency fw-bold text-danger';
+            this.classList.add('is-valid');
+
+            // Sync with server in background
+            fetch('/update_production_actual', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            }).catch(() => {});
+        });
+      });
+
+      new bootstrap.Tab(document.querySelector('#efficiency-tab')).show();
+
+      // Sync with server in background (for data persistence)
       fetch("/plan_production", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ parts, date, shift })
-      })
-        .then(res => res.json())
-        .then(data => {
-          let html = `<h4 class="text-success mb-3">Operator Assignment (${data.present_count} operators present)</h4>
-          <table class="table table-striped align-middle">
-          <thead class="table-dark"><tr><th>Part</th><th>Planned</th><th>Area</th><th>Best Operator</th><th>Support</th><th style="width:150px">Actual Qty</th><th>Efficiency</th></tr></thead><tbody>`;
-          
-          data.assignments.forEach(task => {
-            let bestOp = 'Not Assigned';
-            let supportOp = 'None';
-            if (task.operators && task.operators.length > 0) {
-              bestOp = task.operators[0].best_operator || 'Not Assigned';
-              supportOp = task.operators[0].support_operator || 'None';
-            }
-            html += `<tr>
-            <td class="fw-bold">${task.part}</td>
-            <td>${task.quantity}</td>
-            <td>${task.work_area}</td>
-            <td><span class="badge bg-success">${bestOp}</span></td>
-            <td><span class="badge bg-secondary">${supportOp}</span></td>
-            <td>
-                <input type="number" class="form-control actual-qty" 
-                       data-date="${date}" data-shift="${shift}" 
-                       data-part="${task.part_id}" data-area="${task.work_area}" 
-                       data-plan="${task.quantity}" 
-                       value="0" min="0">
-            </td>
-            <td class="efficiency fw-bold text-muted">0%</td>
-            </tr>`;
-          });
-          html += `</tbody></table>`;
-          document.getElementById("efficiencyResult").innerHTML = html;
-
-          // Wire up Auto-Save on Change
-          document.querySelectorAll('.actual-qty').forEach(input => {
-            input.addEventListener('change', function () { 
-                const payload = {
-                    date: this.dataset.date,
-                    shift: this.dataset.shift,
-                    part_id: this.dataset.part,
-                    work_area: this.dataset.area,
-                    plan: this.dataset.plan,
-                    actual: this.value
-                };
-
-                fetch('/update_production_actual', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify(payload)
-                })
-                .then(res => res.json())
-                .then(resp => {
-                    if(resp.status === 'updated') {
-                        const effCell = this.closest('tr').querySelector('.efficiency');
-                        effCell.textContent = (resp.efficiency % 1 === 0 ? resp.efficiency : resp.efficiency.toFixed(2)) + '%';
-                        effCell.className = resp.efficiency >= 80 ? 'efficiency fw-bold text-success' : 'efficiency fw-bold text-danger';
-                        this.classList.add('is-valid');
-                    }
-                });
-            });
-          });
-
-          new bootstrap.Tab(document.querySelector('#efficiency-tab')).show();
-        });
+      }).catch(() => {});
     });
 
     // --- 4. ATTENDANCE SAVE ---
