@@ -140,14 +140,27 @@ def plan_production():
     selected_parts = data["parts"]
     date = data['date']
     shift = data['shift']
-    att_df = pd.read_csv(FILES['attendance'])
-    present_ids = att_df[(att_df['date'] == date) & (att_df['shift'] == shift) & (att_df['present'] == True)]['emp_id'].tolist()
+    att_df = safe_read_csv(FILES['attendance'], ['date', 'shift', 'emp_id', 'present'])
+    
+    # Handle both boolean and string 'True'/'true' values for present column
+    if not att_df.empty:
+        present_mask = att_df['present'].astype(str).str.lower().eq('true')
+        present_ids = att_df[(att_df['date'] == date) & (att_df['shift'] == shift) & present_mask]['emp_id'].tolist()
+    else:
+        present_ids = []
 
     
     present_employees = [
         {"id": eid, "name": emp["name"], "efficiency": emp["efficiency"], "trained_skills": emp["trained_skills"]}
         for eid, emp in employees.items() if eid in present_ids
     ]
+    
+    # If no attendance data found for this date/shift, use all employees as fallback
+    if not present_employees:
+        present_employees = [
+            {"id": eid, "name": emp["name"], "efficiency": emp["efficiency"], "trained_skills": emp["trained_skills"]}
+            for eid, emp in employees.items()
+        ]
 
     total_tasks = []
     for item in selected_parts:
@@ -177,29 +190,40 @@ def plan_production():
         support_operator = None
         last_best_efficiency = -float('inf')
         last_support_efficiency = float('inf')
-        for emp_assign in assignment_employees[:]:  # copy to avoid modification during iteration
+        
+        # First, try to find skilled operators for this work area
+        for emp_assign in assignment_employees[:]:
             skills = [s.strip() for s in emp_assign["trained_skills"].split(",")]
             if task['work_area'] in skills and emp_assign["efficiency"] > last_best_efficiency:
                 best_operator = emp_assign
                 last_best_efficiency = emp_assign["efficiency"]
 
+        # If no skilled operator found, assign any available operator (highest efficiency)
+        if not best_operator and assignment_employees:
+            best_operator = max(assignment_employees, key=lambda x: x["efficiency"])
+
         if best_operator:
             assignment_employees.remove(best_operator)
 
+        # Try to find skilled support operator
         for emp_assign in assignment_employees[:]:
             skills = [s.strip() for s in emp_assign["trained_skills"].split(",")]
             if task['work_area'] in skills and emp_assign["efficiency"] < last_support_efficiency:
                 support_operator = emp_assign
                 last_support_efficiency = emp_assign["efficiency"]
 
+        # If no skilled support found, assign any available operator (lowest efficiency as support)
+        if not support_operator and assignment_employees:
+            support_operator = min(assignment_employees, key=lambda x: x["efficiency"])
+
         if support_operator:
             assignment_employees.remove(support_operator)
 
-        if best_operator:
-            task_assignments.append({
-                "best_operator": best_operator["name"],
-                "support_operator": support_operator["name"] if support_operator else "None"
-            })
+        # Always add operator assignment (use fallback names if truly no one available)
+        task_assignments.append({
+            "best_operator": best_operator["name"] if best_operator else "Unassigned",
+            "support_operator": support_operator["name"] if support_operator else "Unassigned"
+        })
 
         assignments.append({
             "part": task["part_name"],
