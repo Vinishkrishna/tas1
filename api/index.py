@@ -4,45 +4,21 @@ import os
 import sys
 from datetime import datetime
 
-# Add parent directory to path to import data module
+# Add parent directory to path to import modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from data import employees, parts
+import storage
 
 app = Flask(__name__, template_folder='../templates', static_folder='../static')
 
 # --- Configuration ---
-# Use /tmp for writable files on Vercel (serverless), fallback to current dir for local dev
-def get_file_path(filename):
-    """Get the appropriate file path based on environment."""
-    if os.environ.get('VERCEL'):
-        return f'/tmp/{filename}'
-    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), filename)
-
 FILES = {
-    'attendance': 'attendance_log.csv',
-    'production': 'production_log.csv',
-    'material': 'material_log.csv',
     'standard_times': 'wp_data.csv'
 }
 
-# --- Helper: Init CSVs ---
-def init_csvs():
-    att_path = get_file_path(FILES['attendance'])
-    prod_path = get_file_path(FILES['production'])
-    mat_path = get_file_path(FILES['material'])
-    
-    if not os.path.exists(att_path):
-        pd.DataFrame(columns=['date', 'shift', 'emp_id', 'present']).to_csv(att_path, index=False)
-    if not os.path.exists(prod_path):
-        pd.DataFrame(columns=['date', 'shift', 'part_id', 'work_area', 'plan_qty', 'actual_qty', 'efficiency']).to_csv(prod_path, index=False)
-    if not os.path.exists(mat_path):
-        pd.DataFrame(columns=['date', 'program', 'part_id', 'work_area', 'qty', 'req', 'actual', 'efficiency']).to_csv(mat_path, index=False)
-
-init_csvs()
-
 # --- Helper: Load Standard Times ---
 def get_wp_data_path():
-    """Get path to wp_data.csv - check both locations."""
+    """Get path to wp_data.csv."""
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     return os.path.join(base_dir, FILES['standard_times'])
 
@@ -65,38 +41,24 @@ def mark_attendance():
     date = data.pop('date')
     shift = data.pop('shift')
     
-    new_rows = []
+    # Convert remaining data to attendance dict
+    attendance_dict = {}
     present_count = 0
     for emp_id, present in data.items():
+        attendance_dict[emp_id] = present
         if present:
             present_count += 1
-        new_rows.append({'date': date, 'shift': shift, 'emp_id': emp_id, 'present': present})
     
-    df = pd.DataFrame(new_rows)
+    # Save using storage module
+    storage.save_attendance(date, shift, attendance_dict)
     
-    att_path = get_file_path(FILES['attendance'])
-    
-    # Remove existing entries for this date/shift before adding new ones
-    if os.path.exists(att_path):
-        existing_df = pd.read_csv(att_path)
-        existing_df = existing_df[~((existing_df['date'] == date) & (existing_df['shift'] == shift))]
-        combined_df = pd.concat([existing_df, df], ignore_index=True)
-        combined_df.to_csv(att_path, index=False)
-    else:
-        df.to_csv(att_path, index=False)
-
-    # Return count based on persisted data (guards against duplicates/multiple submits)
-    saved_df = pd.read_csv(att_path)
-    saved_mask = (saved_df['date'] == date) & (saved_df['shift'] == shift)
-    present_mask = saved_df['present'].astype(str).str.lower().eq('true')
-    saved_present_count = saved_df[saved_mask & present_mask]['emp_id'].nunique()
-
+    # Calculate stats
     total_employees = len(employees)
-    attendance_pct = (saved_present_count / total_employees * 100) if total_employees > 0 else 0
+    attendance_pct = (present_count / total_employees * 100) if total_employees > 0 else 0
 
     return jsonify({
         "status": "success",
-        "count": int(saved_present_count),
+        "count": int(present_count),
         "total": int(total_employees),
         "attendance_pct": round(float(attendance_pct), 1),
         "date": date,
@@ -108,16 +70,8 @@ def get_attendance():
     date = request.args.get('date')
     shift = request.args.get('shift')
     
-    att_path = get_file_path(FILES['attendance'])
-    if not os.path.exists(att_path):
-        return jsonify({})
-
-    df = pd.read_csv(att_path)
-    mask = (df['date'] == date) & (df['shift'] == shift)
-    filtered = df[mask]
-    
-    attendance_dict = dict(zip(filtered.emp_id, filtered.present))
-    return jsonify(attendance_dict)
+    attendance = storage.get_attendance(date, shift)
+    return jsonify(attendance)
 
 # --- PRODUCTION PLAN & SAVING ---
 @app.route("/plan_production", methods=["POST"])
@@ -127,14 +81,20 @@ def plan_production():
     date = data['date']
     shift = data['shift']
     
-    att_path = get_file_path(FILES['attendance'])
-    att_df = pd.read_csv(att_path)
-    present_ids = att_df[(att_df['date'] == date) & (att_df['shift'] == shift) & (att_df['present'] == True)]['emp_id'].tolist()
+    # Get present employee IDs using storage module
+    present_ids = storage.get_present_employees(date, shift)
 
     present_employees = [
         {"id": eid, "name": emp["name"], "efficiency": emp["efficiency"], "trained_skills": emp["trained_skills"]}
         for eid, emp in employees.items() if eid in present_ids
     ]
+    
+    # Fallback: if no attendance data, use all employees
+    if not present_employees:
+        present_employees = [
+            {"id": eid, "name": emp["name"], "efficiency": emp["efficiency"], "trained_skills": emp["trained_skills"]}
+            for eid, emp in employees.items()
+        ]
 
     total_tasks = []
     for item in selected_parts:
@@ -157,39 +117,50 @@ def plan_production():
     log_entries = []
     total_tasks.sort(key=lambda x: x["total_minutes"], reverse=True)
     assignment_employees = present_employees.copy()
+    
+    # Helper to normalize skill names
+    def normalize_skill(skill):
+        return skill.strip().lower().replace('_', ' ').replace('  ', ' ')
+    
+    def has_skill(emp, work_area):
+        normalized_area = normalize_skill(work_area)
+        skills = [normalize_skill(s) for s in emp["trained_skills"].split(",") if s.strip()]
+        return normalized_area in skills
 
     for task in total_tasks:
         task_assignments = []
         best_operator = None
         support_operator = None
-        last_best_efficiency = -float('inf')
-        last_support_efficiency = float('inf')
-        for emp_assign in assignment_employees[:]:
-            skills = [s.strip() for s in emp_assign["trained_skills"].split(",")]
-            if task['work_area'] in skills and emp_assign["efficiency"] > last_best_efficiency:
-                best_operator = emp_assign
-                last_best_efficiency = emp_assign["efficiency"]
+        
+        sorted_employees = sorted(assignment_employees, key=lambda x: x["efficiency"], reverse=True)
+        skilled_employees = [emp for emp in sorted_employees if has_skill(emp, task['work_area'])]
+        
+        if skilled_employees:
+            best_operator = skilled_employees[0]
+        elif sorted_employees:
+            best_operator = sorted_employees[0]
 
         if best_operator:
             assignment_employees.remove(best_operator)
+            sorted_employees = sorted(assignment_employees, key=lambda x: x["efficiency"], reverse=True)
+            skilled_employees = [emp for emp in sorted_employees if has_skill(emp, task['work_area'])]
 
-        for emp_assign in assignment_employees[:]:
-            skills = [s.strip() for s in emp_assign["trained_skills"].split(",")]
-            if task['work_area'] in skills and emp_assign["efficiency"] < last_support_efficiency:
-                support_operator = emp_assign
-                last_support_efficiency = emp_assign["efficiency"]
+        if skilled_employees:
+            support_operator = skilled_employees[-1]
+        elif sorted_employees:
+            support_operator = sorted_employees[-1]
 
         if support_operator:
             assignment_employees.remove(support_operator)
 
-        if best_operator:
-            task_assignments.append({
-                "best_operator": best_operator["name"],
-                "support_operator": support_operator["name"] if support_operator else "None"
-            })
+        task_assignments.append({
+            "best_operator": best_operator["name"] if best_operator else "Unassigned",
+            "support_operator": support_operator["name"] if support_operator else "Unassigned"
+        })
 
         assignments.append({
             "part": task["part_name"],
+            "part_id": task["part_id"],
             "quantity": task["quantity"],
             "work_area": task["work_area"],
             "operators": task_assignments
@@ -198,16 +169,15 @@ def plan_production():
         log_entries.append({
             'date': date,
             'shift': shift,
-            'part_id': part_id,
-            'work_area': area,
-            'plan_qty': qty,
+            'part_id': task["part_id"],
+            'work_area': task["work_area"],
+            'plan_qty': task["quantity"],
             'actual_qty': 0,
             'efficiency': 0
         })
 
-    prod_path = get_file_path(FILES['production'])
-    log_df = pd.DataFrame(log_entries)
-    log_df.to_csv(prod_path, mode='a', header=not os.path.exists(prod_path), index=False)
+    # Save using storage module
+    storage.save_production_plan(log_entries)
 
     return jsonify({"assignments": assignments, "present_count": len(present_employees)})
 
@@ -224,17 +194,11 @@ def update_production_actual():
     
     efficiency = (actual / plan * 100) if plan > 0 else 0
 
-    prod_path = get_file_path(FILES['production'])
-    df = pd.read_csv(prod_path)
+    # Update using storage module
+    updated = storage.update_production_actual(date, shift, part_id, area, actual, efficiency)
     
-    mask = (df['date'] == date) & (df['shift'] == shift) & (df['part_id'] == part_id) & (df['work_area'] == area)
-    
-    if mask.any():
-        df.loc[mask, 'actual_qty'] = actual
-        df.loc[mask, 'efficiency'] = efficiency
-        df.to_csv(prod_path, index=False)
+    if updated:
         return jsonify({"status": "updated", "efficiency": efficiency})
-    
     return jsonify({"status": "not found"})
 
 # --- MATERIAL ---
@@ -245,23 +209,35 @@ def save_material():
     materials = data.get("materials", [])
     
     rows = []
+    area_efficiencies = {}
+    
     for item in materials:
+        eff_value = float(item['efficiency'].replace('%',''))
+        work_area = item['work_area']
+        
         rows.append({
             'date': date_str,
             'program': item['program'],
             'part_id': item['part_id'],
-            'work_area': item['work_area'],
+            'work_area': work_area,
             'qty': item['qty'],
             'req': item['req'],
             'actual': item['actual'],
-            'efficiency': float(item['efficiency'].replace('%',''))
+            'efficiency': eff_value
         })
+        
+        if work_area not in area_efficiencies:
+            area_efficiencies[work_area] = []
+        area_efficiencies[work_area].append(eff_value)
     
-    mat_path = get_file_path(FILES['material'])
-    df = pd.DataFrame(rows)
-    df.to_csv(mat_path, mode='a', header=not os.path.exists(mat_path), index=False)
+    # Save using storage module
+    storage.save_materials(rows)
+    
+    work_area_avg = {}
+    for area, effs in area_efficiencies.items():
+        work_area_avg[area] = sum(effs) / len(effs) if effs else 0
             
-    return jsonify({"status": "success", "count": len(rows)})    
+    return jsonify({"status": "success", "count": len(rows), "efficiencies": work_area_avg})    
 
 # --- DASHBOARD DATA AGGREGATION ---
 @app.route("/get_dashboard_data")
@@ -272,18 +248,9 @@ def get_dashboard_data():
     response_data = {}
     work_areas = ['Autoclave', 'CCA', 'PAA', 'Paint_Booth', 'Prefit']
 
-    prod_path = get_file_path(FILES['production'])
-    mat_path = get_file_path(FILES['material'])
-    
-    prod_df = pd.read_csv(prod_path) if os.path.exists(prod_path) else pd.DataFrame()
-    mat_df = pd.read_csv(mat_path) if os.path.exists(mat_path) else pd.DataFrame()
-
-    if not prod_df.empty:
-        prod_df = prod_df[prod_df['date'] == date]
-        if shift:
-            prod_df = prod_df[prod_df['shift'] == shift]
-    if not mat_df.empty:
-        mat_df = mat_df[mat_df['date'] == date]
+    # Load data using storage module
+    prod_records = storage.get_production(date, shift)
+    mat_records = storage.get_materials(date)
 
     for area in work_areas:
         area_clean = area.replace('_', ' ').lower()
@@ -291,31 +258,31 @@ def get_dashboard_data():
         prod_effs = []
         mat_effs = []
 
-        if not prod_df.empty:
-            p_rows = prod_df[prod_df['work_area'].str.lower().str.replace('_', ' ') == area_clean]
-            prod_effs = p_rows['efficiency'].tolist()
+        for r in prod_records:
+            r_area = str(r.get('work_area', '')).lower().replace('_', ' ')
+            if r_area == area_clean:
+                prod_effs.append(r.get('efficiency', 0))
 
-        if not mat_df.empty:
-            m_rows = mat_df[mat_df['work_area'].str.lower().str.replace('_', ' ') == area_clean]
-            mat_effs = m_rows['efficiency'].tolist()
+        for r in mat_records:
+            r_area = str(r.get('work_area', '')).lower().replace('_', ' ')
+            if r_area == area_clean:
+                mat_effs.append(r.get('efficiency', 0))
 
         all_effs = prod_effs + mat_effs
         avg_eff = sum(all_effs) / len(all_effs) if all_effs else 0
         
         response_data[area] = avg_eff
 
-    # Attendance (for the selected date/shift)
-    att_path = get_file_path(FILES['attendance'])
+    # Attendance
     total_employees = len(employees)
-    present_count = 0
-    if os.path.exists(att_path):
-        att_df = pd.read_csv(att_path)
-        if not att_df.empty:
-            mask = (att_df['date'] == date)
-            if shift:
-                mask = mask & (att_df['shift'] == shift)
-            present_mask = att_df['present'].astype(str).str.lower().eq('true')
-            present_count = att_df[mask & present_mask]['emp_id'].nunique()
+    present_count = storage.count_present(date, shift) if shift else 0
+    
+    # If no shift specified, count for both shifts
+    if not shift:
+        present_count = max(
+            storage.count_present(date, 'Day'),
+            storage.count_present(date, 'Night')
+        )
 
     attendance_pct = (present_count / total_employees * 100) if total_employees > 0 else 0
     response_data['attendance_present'] = int(present_count)
