@@ -570,7 +570,7 @@
                         // 2. Update Text Overlay & Badge
                         const textEl = document.getElementById(`val${area}`);
                         if(textEl) {
-                            textEl.textContent = Math.round(eff) + "%";
+                            textEl.textContent = eff % 1 === 0 ? eff + "%" : eff.toFixed(2) + "%";
                             textEl.style.color = (eff === 0) ? '#aaa' : color;
                         }
                         const badgeEl = document.getElementById(`badge${area}`);
@@ -598,7 +598,8 @@
                 });
 
                 // 4. Update KPI Cards
-                const avg = activeCount > 0 ? (totalEff / activeCount).toFixed(1) : 0;
+                const avgVal = activeCount > 0 ? (totalEff / activeCount) : 0;
+                const avg = avgVal % 1 === 0 ? avgVal : avgVal.toFixed(2);
                 document.getElementById('kpi-avg').textContent = avg + "%";
                 document.getElementById('kpi-best').textContent = activeCount > 0 ? bestName : "-";
                 document.getElementById('kpi-worst').textContent = activeCount > 0 ? worstName : "-";
@@ -736,7 +737,7 @@
                 .then(resp => {
                     if(resp.status === 'updated') {
                         const effCell = this.closest('tr').querySelector('.efficiency');
-                        effCell.textContent = resp.efficiency.toFixed(1) + '%';
+                        effCell.textContent = (resp.efficiency % 1 === 0 ? resp.efficiency : resp.efficiency.toFixed(2)) + '%';
                         effCell.className = resp.efficiency >= 80 ? 'efficiency fw-bold text-success' : 'efficiency fw-bold text-danger';
                         this.classList.add('is-valid');
                     }
@@ -818,7 +819,7 @@
         else if (actual > 0 && totalReq === 0) efficiency = 100;
 
         const effSpan = row.querySelector(".eff-display");
-        effSpan.textContent = efficiency.toFixed(1) + "%";
+        effSpan.textContent = (efficiency % 1 === 0 ? efficiency : efficiency.toFixed(2)) + "%";
         
         if (efficiency > 105) effSpan.className = "eff-display text-danger";
         else if (efficiency > 0) effSpan.className = "eff-display text-success";
@@ -896,7 +897,7 @@
                 // Update text overlay
                 const textEl = document.getElementById(`val${area}`);
                 if (textEl) {
-                    textEl.textContent = Math.round(eff) + "%";
+                    textEl.textContent = (eff % 1 === 0 ? eff : eff.toFixed(2)) + "%";
                     textEl.style.color = (eff === 0) ? '#aaa' : color;
                 }
                 
