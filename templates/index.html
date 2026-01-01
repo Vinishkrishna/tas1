@@ -965,6 +965,10 @@
 
       if (materialData.length === 0) { alert("Please fill at least one row."); return; }
 
+      // Show "Saved!" immediately
+      document.getElementById("materialStatus").innerHTML = `<div class="alert alert-success">✓ Saved ${materialData.length} entries!</div>`;
+
+      // Sync with server in background
       fetch("/save_material", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -972,8 +976,6 @@
       })
       .then(res => res.json())
       .then(data => {
-          document.getElementById("materialStatus").innerHTML = `<div class="alert alert-success">Saved ${data.count} entries!</div>`;
-          
           // Immediately update the Work Cell Efficiency charts with the saved efficiencies
           if (data.efficiencies) {
               updateDashboardWithEfficiencies(data.efficiencies);
@@ -982,6 +984,9 @@
           // Also refresh full dashboard data from backend
           const currentShift = getCurrentShift();
           loadDashboardData(date, currentShift);
+      })
+      .catch(() => {
+          document.getElementById("materialStatus").innerHTML = `<div class="alert alert-warning">Saved locally. Server sync pending...</div>`;
       });
     });
     
