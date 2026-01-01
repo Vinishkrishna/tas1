@@ -183,38 +183,44 @@ def plan_production():
     log_entries = []
     total_tasks.sort(key=lambda x: x["total_minutes"], reverse=True)
     assignment_employees = present_employees.copy()
+    
+    # Pre-process skills for faster matching - normalize skill names (handle Paint_Booth vs Paint Booth)
+    def normalize_skill(skill):
+        return skill.strip().lower().replace('_', ' ').replace('  ', ' ')
+    
+    def has_skill(emp, work_area):
+        normalized_area = normalize_skill(work_area)
+        skills = [normalize_skill(s) for s in emp["trained_skills"].split(",") if s.strip()]
+        return normalized_area in skills
 
     for task in total_tasks:
         task_assignments = []
         best_operator = None
         support_operator = None
-        last_best_efficiency = -float('inf')
-        last_support_efficiency = float('inf')
         
-        # First, try to find skilled operators for this work area
-        for emp_assign in assignment_employees[:]:
-            skills = [s.strip() for s in emp_assign["trained_skills"].split(",")]
-            if task['work_area'] in skills and emp_assign["efficiency"] > last_best_efficiency:
-                best_operator = emp_assign
-                last_best_efficiency = emp_assign["efficiency"]
-
-        # If no skilled operator found, assign any available operator (highest efficiency)
-        if not best_operator and assignment_employees:
-            best_operator = max(assignment_employees, key=lambda x: x["efficiency"])
+        # Sort available employees by efficiency (descending) once for this task
+        sorted_employees = sorted(assignment_employees, key=lambda x: x["efficiency"], reverse=True)
+        
+        # Find skilled operators for this work area (sorted by efficiency, highest first)
+        skilled_employees = [emp for emp in sorted_employees if has_skill(emp, task['work_area'])]
+        
+        # Best operator: highest efficiency skilled employee, or highest efficiency overall if none skilled
+        if skilled_employees:
+            best_operator = skilled_employees[0]
+        elif sorted_employees:
+            best_operator = sorted_employees[0]
 
         if best_operator:
             assignment_employees.remove(best_operator)
+            # Re-sort after removing best operator
+            sorted_employees = sorted(assignment_employees, key=lambda x: x["efficiency"], reverse=True)
+            skilled_employees = [emp for emp in sorted_employees if has_skill(emp, task['work_area'])]
 
-        # Try to find skilled support operator
-        for emp_assign in assignment_employees[:]:
-            skills = [s.strip() for s in emp_assign["trained_skills"].split(",")]
-            if task['work_area'] in skills and emp_assign["efficiency"] < last_support_efficiency:
-                support_operator = emp_assign
-                last_support_efficiency = emp_assign["efficiency"]
-
-        # If no skilled support found, assign any available operator (lowest efficiency as support)
-        if not support_operator and assignment_employees:
-            support_operator = min(assignment_employees, key=lambda x: x["efficiency"])
+        # Support operator: lowest efficiency skilled employee, or lowest efficiency overall if none skilled
+        if skilled_employees:
+            support_operator = skilled_employees[-1]  # Lowest efficiency skilled
+        elif sorted_employees:
+            support_operator = sorted_employees[-1]  # Lowest efficiency overall
 
         if support_operator:
             assignment_employees.remove(support_operator)

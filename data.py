@@ -11,31 +11,31 @@ employees = {
 
     "E004": {"name": "M Imran", "efficiency": 0.8, "trained_skills": "PAA,Paint_Booth"},
 
-    "E005": {"name": "Daharmendar", "efficiency": 0.75, "trained_skills": "Paint_Booth,"},
+    "E005": {"name": "Daharmendar", "efficiency": 0.75, "trained_skills": "Paint_Booth"},
 
-    "E006": {"name": "Satishkumar", "efficiency": 0.6, "trained_skills": "Autoclave,Debbaging"},
+    "E006": {"name": "Satishkumar", "efficiency": 0.6, "trained_skills": "Autoclave,Debagging"},
 
     "E007": {"name": "Kishor", "efficiency": 0.85, "trained_skills": "Prefit,CCA"},
 
-    "E008": {"name": "Shiva Karan", "efficiency": 0.7, "trained_skills": "Paint_Booth,"},
+    "E008": {"name": "Shiva Karan", "efficiency": 0.7, "trained_skills": "Paint_Booth"},
 
-    "E009": {"name": "Ganesh Patil", "efficiency": 0.65, "trained_skills": "PAA,Paint Booth"},
+    "E009": {"name": "Ganesh Patil", "efficiency": 0.65, "trained_skills": "PAA,Paint_Booth"},
 
-    "E010": {"name": "Malleshi", "efficiency": 0.9, "trained_skills": "Debbaging"},
+    "E010": {"name": "Malleshi", "efficiency": 0.9, "trained_skills": "Debagging"},
 
     "E011": {"name": "Kanhu", "efficiency": 0.9, "trained_skills": "Prefit,CCA"},
 
     "E012": {"name": "Ajith Kumar", "efficiency": 0.7, "trained_skills": "Prefit,CCA"},
 
-    "E013": {"name": "Manoj Kumar", "efficiency": 0.8, "trained_skills": "Paint Booth"},
+    "E013": {"name": "Manoj Kumar", "efficiency": 0.8, "trained_skills": "Paint_Booth"},
 
-    "E014": {"name": "R Raju", "efficiency": 0.8, "trained_skills": "Paint Booth"},
+    "E014": {"name": "R Raju", "efficiency": 0.8, "trained_skills": "Paint_Booth"},
 
     "E015": {"name": "Arun Kumar", "efficiency": 0.4, "trained_skills": "Prefit,CCA"},
 
     "E016": {"name": "Harish", "efficiency": 0.8, "trained_skills": "Prefit,CCA"},
 
-    "E017": {"name": "Adithya", "efficiency": 0.5, "trained_skills": "Debbaging"},
+    "E017": {"name": "Adithya", "efficiency": 0.5, "trained_skills": "Debagging"},
 
     "E018": {"name": "Jaswa", "efficiency": 0.7, "trained_skills": "Paint_Booth"},
 
