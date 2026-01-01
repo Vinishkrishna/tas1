@@ -1,6 +1,7 @@
 """
 Persistent Storage Module for Vercel KV (Upstash Redis)
 Falls back to local CSV files when not running on Vercel.
+Uses date-based keys for faster attendance operations.
 """
 import os
 import json
@@ -24,7 +25,6 @@ if is_vercel_kv_available():
         redis_client = None
 
 # Storage keys
-ATTENDANCE_KEY = "attendance_data"
 PRODUCTION_KEY = "production_data"
 MATERIAL_KEY = "material_data"
 
@@ -102,48 +102,89 @@ def append_data(data_type, new_records):
 def _get_key(data_type):
     """Get Redis key for data type."""
     keys = {
-        'attendance': ATTENDANCE_KEY,
         'production': PRODUCTION_KEY,
         'material': MATERIAL_KEY
     }
     return keys.get(data_type, data_type)
 
-# ============== ATTENDANCE FUNCTIONS ==============
+# ============== ATTENDANCE FUNCTIONS (OPTIMIZED) ==============
+
+def _get_attendance_key(date, shift):
+    """Get a unique key for attendance by date and shift - much faster lookups."""
+    return f"att:{date}:{shift}"
 
 def get_attendance(date, shift):
     """Get attendance for specific date/shift as dict {emp_id: present}."""
-    records = load_data('attendance')
-    result = {}
-    for r in records:
-        if r.get('date') == date and r.get('shift') == shift:
-            # Handle both string and boolean values
-            present = r.get('present')
-            if isinstance(present, str):
-                present = present.lower() == 'true'
-            result[r.get('emp_id')] = present
-    return result
+    if redis_client:
+        # Direct lookup by date/shift key - FAST!
+        key = _get_attendance_key(date, shift)
+        try:
+            data = redis_client.get(key)
+            if data:
+                if isinstance(data, str):
+                    return json.loads(data)
+                return data
+            return {}
+        except Exception as e:
+            print(f"Error loading attendance from KV: {e}")
+            return {}
+    else:
+        # Local CSV fallback
+        filepath = os.path.join(get_base_path(), LOCAL_FILES['attendance'])
+        if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
+            try:
+                df = pd.read_csv(filepath)
+                mask = (df['date'] == date) & (df['shift'] == shift)
+                filtered = df[mask]
+                result = {}
+                for _, row in filtered.iterrows():
+                    present = row['present']
+                    if isinstance(present, str):
+                        present = present.lower() == 'true'
+                    result[row['emp_id']] = present
+                return result
+            except Exception:
+                return {}
+        return {}
 
 def save_attendance(date, shift, attendance_dict):
     """
-    Save attendance for a date/shift.
+    Save attendance for a date/shift - FAST: writes only to specific key.
     attendance_dict: {emp_id: True/False}
     """
-    # Load existing data
-    records = load_data('attendance')
-    
-    # Remove existing entries for this date/shift
-    records = [r for r in records if not (r.get('date') == date and r.get('shift') == shift)]
-    
-    # Add new entries
-    for emp_id, present in attendance_dict.items():
-        records.append({
-            'date': date,
-            'shift': shift,
-            'emp_id': emp_id,
-            'present': present
-        })
-    
-    return save_data('attendance', records)
+    if redis_client:
+        # Direct save to date/shift key - FAST!
+        key = _get_attendance_key(date, shift)
+        try:
+            redis_client.set(key, json.dumps(attendance_dict))
+            return True
+        except Exception as e:
+            print(f"Error saving attendance to KV: {e}")
+            return False
+    else:
+        # Local CSV fallback
+        filepath = os.path.join(get_base_path(), LOCAL_FILES['attendance'])
+        
+        # Load existing data
+        if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
+            try:
+                existing_df = pd.read_csv(filepath)
+                # Remove existing entries for this date/shift
+                existing_df = existing_df[~((existing_df['date'] == date) & (existing_df['shift'] == shift))]
+            except Exception:
+                existing_df = pd.DataFrame(columns=['date', 'shift', 'emp_id', 'present'])
+        else:
+            existing_df = pd.DataFrame(columns=['date', 'shift', 'emp_id', 'present'])
+        
+        # Create new rows
+        new_rows = [{'date': date, 'shift': shift, 'emp_id': emp_id, 'present': present} 
+                    for emp_id, present in attendance_dict.items()]
+        new_df = pd.DataFrame(new_rows)
+        
+        # Combine and save
+        combined_df = pd.concat([existing_df, new_df], ignore_index=True)
+        combined_df.to_csv(filepath, index=False)
+        return True
 
 def get_present_employees(date, shift):
     """Get list of present employee IDs for date/shift."""
