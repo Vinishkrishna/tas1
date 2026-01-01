@@ -965,8 +965,9 @@
 
       if (materialData.length === 0) { alert("Please fill at least one row."); return; }
 
-      // Show "Saved!" immediately
-      document.getElementById("materialStatus").innerHTML = `<div class="alert alert-success">✓ Saved ${materialData.length} entries!</div>`;
+      // Show "Saved!" and switch to Work Cell Efficiency tab
+      document.getElementById("materialStatus").innerHTML = `<div class="alert alert-success">✓ Saved!</div>`;
+      new bootstrap.Tab(document.querySelector('#dashboard-tab')).show();
 
       // Sync with server in background
       fetch("/save_material", {
@@ -976,18 +977,13 @@
       })
       .then(res => res.json())
       .then(data => {
-          // Immediately update the Work Cell Efficiency charts with the saved efficiencies
           if (data.efficiencies) {
               updateDashboardWithEfficiencies(data.efficiencies);
           }
-          
-          // Also refresh full dashboard data from backend
           const currentShift = getCurrentShift();
           loadDashboardData(date, currentShift);
       })
-      .catch(() => {
-          document.getElementById("materialStatus").innerHTML = `<div class="alert alert-warning">Saved locally. Server sync pending...</div>`;
-      });
+      .catch(() => {});
     });
     
     // Function to directly update dashboard charts with efficiency values
